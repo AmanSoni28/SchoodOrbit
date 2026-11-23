@@ -1,0 +1,49 @@
+@import 'tailwindcss';
+
+/* Design tokens (PDF §02). --brand-* are overwritten at runtime from college settings (white-label). */
+:root {
+  --brand-primary: #4163f5;
+  --brand-accent: #0eaa9e;
+}
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --color-navy: #101b3a;
+  --color-navy-2: #1a2750;
+  --color-primary: var(--brand-primary);
+  --color-accent: var(--brand-accent);
+  --color-gold: #f0b550;
+  --color-cloud: #f4f7fc;
+  --color-surface: #ffffff;
+  --color-ink: #23324b;
+  --color-muted: #5f6f87;
+  --color-line: #dce4f0;
+  --color-danger: #c8323c;
+  --color-success: #0a8a80;
+}
+
+html, body, #root { height: 100%; }
+body { background: var(--color-cloud); color: var(--color-ink); font-size: 15px; -webkit-font-smoothing: antialiased; }
+
+/* Visible focus for keyboard users (WCAG 2.4.7). */
+:focus-visible { outline: 3px solid color-mix(in srgb, var(--brand-primary) 55%, white); outline-offset: 2px; border-radius: 6px; }
+
+.skeleton { background: linear-gradient(90deg, #e8eef7 25%, #f3f6fb 37%, #e8eef7 63%); background-size: 400% 100%; animation: sk 1.3s ease infinite; }
+@keyframes sk { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } * { transition: none !important; } }
+
+.prose-lms h2 { font-size: 1.25rem; font-weight: 700; margin: 1.25rem 0 .5rem; color: var(--color-navy); }
+.prose-lms h3 { font-size: 1.05rem; font-weight: 600; margin: 1rem 0 .4rem; color: var(--color-navy); }
+.prose-lms p { margin: .55rem 0; line-height: 1.7; }
+.prose-lms ul { list-style: disc; padding-left: 1.4rem; margin: .5rem 0; }
+.prose-lms li { margin: .2rem 0; line-height: 1.6; }
+.prose-lms code { background: #eef2fa; padding: .1rem .35rem; border-radius: 4px; font-size: .9em; }
+
+/* Printing receipts and mark sheets: only the .print-area is printed. */
+@media print {
+  html, body, #root, #root * { overflow: visible !important; }
+  body * { visibility: hidden; }
+  .print-area, .print-area * { visibility: visible; }
+  .print-area { position: absolute; inset: 0; padding: 24px; }
+  .no-print { display: none !important; }
+}
