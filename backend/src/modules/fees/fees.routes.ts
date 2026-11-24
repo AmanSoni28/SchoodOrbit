@@ -139,7 +139,7 @@ r.post('/fees/student-fees/:id/payments', admin, async (req, res) => {
   res.status(201).json({ data: { ...payment, amount: Number(payment.amount) } });
 });
 
-// ── Receipt: admin, or the student who paid ──
+// ── Receipt: admin, the student who paid, or a parent actively linked to them ──
 r.get('/fees/payments/:id', async (req, res) => {
   const id = uuid.parse(req.params.id);
   const p = await prisma.feePayment.findUnique({
@@ -147,21 +147,28 @@ r.get('/fees/payments/:id', async (req, res) => {
     include: { recordedBy: { select: { firstName: true, lastName: true } }, studentFee: { include: { student: studentSel, structure: { select: { name: true } }, payments: { select: { amount: true } } } } },
   });
   // 404 (not 403) so receipt ids can't be probed.
-  if (!p || !(hasRole(req.user, 'COLLEGE_ADMIN') || p.studentFee.studentId === req.user!.id)) throw notFound('Receipt not found');
+  const allowed = p && (hasRole(req.user, 'COLLEGE_ADMIN') || p.studentFee.studentId === req.user!.id
+    || (hasRole(req.user, 'PARENT') && await prisma.parentStudentLink.count({ where: { parentId: req.user!.id, studentId: p.studentFee.studentId, status: 'ACTIVE' } })));
+  if (!p || !allowed) throw notFound('Receipt not found');
   const st = feeState(p.studentFee);
   res.json({ data: { id: p.id, receiptNo: p.receiptNo, amount: Number(p.amount), method: p.method, reference: p.reference, note: p.note, paidAt: p.paidAt, recordedBy: p.recordedBy, student: p.studentFee.student, fee: { name: p.studentFee.structure.name, net: st.net, paid: st.paid, balance: st.balance, status: st.status } } });
 });
 
-// ── Student ──
-r.get('/fees/me', requireRole('STUDENT'), async (req, res) => {
+// ── Student (and linked parents, via parent.routes) ──
+/** A student's charges, payments and totals. Shared by the student's own page and the parent portal. */
+export async function studentFees(studentId: string) {
   const fees = await prisma.studentFee.findMany({
-    where: { studentId: req.user!.id },
+    where: { studentId },
     include: { structure: { select: { name: true, description: true } }, payments: { orderBy: { paidAt: 'desc' }, select: { id: true, amount: true, method: true, receiptNo: true, paidAt: true, reference: true } } },
     orderBy: { dueDate: 'asc' },
   });
   const rows = fees.map(withState).map((f) => ({ ...f, amount: Number(f.amount), discount: Number(f.discount), payments: f.payments.map((p) => ({ ...p, amount: Number(p.amount) })) }));
   const nextDue = rows.filter((f) => f.balance > 0).sort((a, b) => +a.dueDate - +b.dueDate)[0] ?? null;
-  res.json({ data: { fees: rows, totals: { billed: r2(rows.reduce((s, f) => s + f.net, 0)), paid: r2(rows.reduce((s, f) => s + f.paid, 0)), balance: r2(rows.reduce((s, f) => s + f.balance, 0)), overdue: r2(rows.filter((f) => f.status === 'OVERDUE').reduce((s, f) => s + f.balance, 0)) }, nextDue } });
+  return { fees: rows, totals: { billed: r2(rows.reduce((s, f) => s + f.net, 0)), paid: r2(rows.reduce((s, f) => s + f.paid, 0)), balance: r2(rows.reduce((s, f) => s + f.balance, 0)), overdue: r2(rows.filter((f) => f.status === 'OVERDUE').reduce((s, f) => s + f.balance, 0)) }, nextDue };
+}
+
+r.get('/fees/me', requireRole('STUDENT'), async (req, res) => {
+  res.json({ data: await studentFees(req.user!.id) });
 });
 
 export default r;

@@ -1,6 +1,7 @@
 // College LMS — single-college, white-label. See docs/database-design.md.
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"] // rhel = Vercel / AWS Lambda runtime
 }
 
 datasource db {
@@ -72,6 +73,12 @@ model User {
   studentFees         StudentFee[]
   feePaymentsRecorded FeePayment[]                   @relation("FeePaymentRecorder")
   resultPublications  ResultPublication[]
+  leaveRequests       LeaveRequest[]                 @relation("LeaveApplicant")
+  leavesReviewed      LeaveRequest[]                 @relation("LeaveReviewer")
+  academicEvents      AcademicEvent[]                @relation("AcademicEventCreator")
+  conversationsA      Conversation[]                 @relation("ConversationA")
+  conversationsB      Conversation[]                 @relation("ConversationB")
+  messagesSent        Message[]                      @relation("MessageSender")
 }
 
 model UserRole {
@@ -269,6 +276,7 @@ model CourseOffering {
   recommendations InsightRecommendation[]
   certificates    Certificate[]
   learningEvents  LearningEvent[]
+  timetableSlots  TimetableSlot[]
 
   @@unique([courseId, semesterId, sectionId])
   @@index([semesterId])
@@ -361,6 +369,7 @@ model FileAsset {
 
   lessonResources LessonResource[]
   submissionFiles SubmissionFile[]
+  assignmentFiles AssignmentFile[]
   aiAttachments   AIStudyAttachment[]
   aiSources       AIContentSource[]
 }
@@ -441,6 +450,7 @@ model Assignment {
   updatedAt         DateTime         @updatedAt
   offering          CourseOffering   @relation(fields: [offeringId], references: [id], onDelete: Restrict)
   submissions       Submission[]
+  files             AssignmentFile[]
 
   @@index([offeringId, status])
 }
@@ -472,6 +482,16 @@ model Submission {
 
   @@unique([assignmentId, studentId, attemptNo])
   @@index([studentId])
+}
+
+// Question papers / reference material attached by faculty to an assignment.
+model AssignmentFile {
+  assignmentId String     @db.Uuid
+  fileAssetId  String     @db.Uuid
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  fileAsset    FileAsset  @relation(fields: [fileAssetId], references: [id], onDelete: Restrict)
+
+  @@id([assignmentId, fileAssetId])
 }
 
 model SubmissionFile {
@@ -1164,4 +1184,122 @@ model ResultPublication {
   publishedById String   @db.Uuid
   semester      Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
   publishedBy   User     @relation(fields: [publishedById], references: [id], onDelete: Restrict)
+}
+
+// ───────────── Leave ─────────────
+enum LeaveType {
+  SICK
+  CASUAL
+  MEDICAL
+  FAMILY
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveRequest {
+  id          String      @id @default(uuid()) @db.Uuid
+  applicantId String      @db.Uuid
+  type        LeaveType
+  fromDate    DateTime    @db.Date
+  toDate      DateTime    @db.Date
+  days        Int
+  reason      String
+  status      LeaveStatus @default(PENDING)
+  reviewerId  String?     @db.Uuid
+  reviewNote  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  applicant   User        @relation("LeaveApplicant", fields: [applicantId], references: [id], onDelete: Cascade)
+  reviewer    User?       @relation("LeaveReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@index([applicantId, fromDate])
+  @@index([status, createdAt])
+}
+
+// ───────────── Timetable ─────────────
+enum SlotKind {
+  LECTURE
+  LAB
+  TUTORIAL
+}
+
+// A recurring weekly class slot. Times are "HH:MM" wall-clock in the college time zone.
+model TimetableSlot {
+  id         String         @id @default(uuid()) @db.Uuid
+  offeringId String         @db.Uuid
+  dayOfWeek  Int // 1 = Monday … 7 = Sunday
+  startTime  String
+  endTime    String
+  room       String?
+  kind       SlotKind       @default(LECTURE)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  offering   CourseOffering @relation(fields: [offeringId], references: [id], onDelete: Cascade)
+
+  @@index([offeringId])
+  @@index([dayOfWeek, startTime])
+}
+
+// ───────────── Academic calendar ─────────────
+// Semester start/end dates are not stored here — they come from Semester and are merged in by the API.
+enum CalendarEventType {
+  HOLIDAY
+  EXAM
+  DEADLINE
+  EVENT
+  BREAK
+  ACADEMIC
+}
+
+model AcademicEvent {
+  id          String            @id @default(uuid()) @db.Uuid
+  title       String
+  description String?
+  type        CalendarEventType
+  startDate   DateTime          @db.Date
+  endDate     DateTime          @db.Date // inclusive; equals startDate for one-day events
+  createdById String?           @db.Uuid
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  createdBy   User?             @relation("AcademicEventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([startDate, endDate])
+}
+
+// ───────────── Direct messages ─────────────
+// One conversation per pair of users. userAId < userBId (string order) so a pair can only exist once.
+model Conversation {
+  id            String    @id @default(uuid()) @db.Uuid
+  userAId       String    @db.Uuid
+  userBId       String    @db.Uuid
+  aReadAt       DateTime? // last time A opened the thread
+  bReadAt       DateTime?
+  lastMessageAt DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  userA         User      @relation("ConversationA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB         User      @relation("ConversationB", fields: [userBId], references: [id], onDelete: Cascade)
+  messages      Message[]
+
+  @@unique([userAId, userBId])
+  @@index([userAId, lastMessageAt])
+  @@index([userBId, lastMessageAt])
+}
+
+model Message {
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @db.Uuid
+  senderId       String       @db.Uuid
+  body           String
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User         @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
 }

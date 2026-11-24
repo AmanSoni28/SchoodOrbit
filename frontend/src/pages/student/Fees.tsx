@@ -7,8 +7,9 @@ import { Button, Card, EmptyState, Hero, HeroChip, QueryView, Stat, StatusBadge,
 import { Ring } from '../../components/charts';
 import { ReceiptModal } from '../../components/Receipt';
 
-export default function StudentFees() {
-  const q = useGet<any>('/fees/me');
+/** The student's own fees by default; the parent portal passes its child's endpoint and name. */
+export default function StudentFees({ path = '/fees/me', name }: { path?: string; name?: string }) {
+  const q = useGet<any>(path);
   const b = useBranding();
   const [receipt, setReceipt] = useState<string | null>(null);
   return (
@@ -19,19 +20,19 @@ export default function StudentFees() {
         const payments = d.fees.flatMap((f: any) => f.payments.map((p: any) => ({ ...p, fee: f.structure.name }))).sort((a: any, z: any) => +new Date(z.paidAt) - +new Date(a.paidAt));
         return (
           <>
-            <Hero eyebrow="Finance" title="My fees" subtitle={`Your charges and payments at ${b.name}. Contact the accounts office to pay or if something looks wrong.`}
+            <Hero eyebrow="Finance" title={name ? `${name}'s fees` : 'My fees'} subtitle={`${name ? `${name}'s` : 'Your'} charges and payments at ${b.name}. Contact the accounts office to pay or if something looks wrong.`}
               aside={<div className="flex items-center gap-4 rounded-2xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur"><Ring value={paidPct} size={92} label="Fees paid"><span className="text-lg font-bold text-white">{paidPct === null ? '—' : `${paidPct}%`}</span></Ring><div className="text-sm"><div className="font-semibold">Paid so far</div><div className="text-white/65">{money(t.paid)} of {money(t.billed)}</div></div></div>}>
               {d.nextDue ? <HeroChip icon={<CalendarClock />}>Next due {fmtDate(d.nextDue.dueDate)} · {money(d.nextDue.balance)}</HeroChip> : <HeroChip icon={<CheckCircle2 />}>Nothing due</HeroChip>}
               {t.overdue > 0 && <HeroChip icon={<AlertTriangle />}>{money(t.overdue)} overdue</HeroChip>}
             </Hero>
 
-            {d.fees.length === 0 ? <EmptyState icon={<Wallet className="size-6" />} title="No fees yet" body="Charges from your college will appear here." /> : (
+            {d.fees.length === 0 ? <EmptyState icon={<Wallet className="size-6" />} title="No fees yet" body="Charges from the college will appear here." /> : (
               <>
                 <div className="mb-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                   <Stat label="Total fees" value={money(t.billed)} hint={`${d.fees.length} charge${d.fees.length === 1 ? '' : 's'}`} icon={<IndianRupee />} tone="navy" />
                   <Stat label="Paid" value={money(t.paid)} hint={`${payments.length} payment${payments.length === 1 ? '' : 's'}`} icon={<HandCoins />} tone="accent" />
                   <Stat label="Balance" value={money(t.balance)} icon={<Wallet />} tone="gold" />
-                  <Stat label="Overdue" value={money(t.overdue)} hint={t.overdue > 0 ? 'Please contact the accounts office' : 'You are up to date'} icon={<AlertTriangle />} />
+                  <Stat label="Overdue" value={money(t.overdue)} hint={t.overdue > 0 ? 'Please contact the accounts office' : 'All payments up to date'} icon={<AlertTriangle />} />
                 </div>
 
                 <h2 className="mb-3 text-[15px] font-semibold text-navy">Charges</h2>

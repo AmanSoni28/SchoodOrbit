@@ -4,6 +4,7 @@ import { useAuth, type Role } from './lib/auth';
 import { AppShell } from './components/AppShell';
 import { LoadingBlock, EmptyState, Button } from './components/ui';
 import Login from './pages/auth/Login';
+import Landing from './pages/auth/Landing';
 import { ForgotPassword, ResetPassword } from './pages/auth/Password';
 import VerifyCertificate from './pages/auth/VerifyCertificate';
 import Dashboard from './pages/Dashboard';
@@ -38,11 +39,23 @@ const Fees = lazy(() => import('./pages/admin/Fees'));
 const ResultsAdmin = lazy(() => import('./pages/admin/Results'));
 const StudentFees = lazy(() => import('./pages/student/Fees'));
 const StudentResults = lazy(() => import('./pages/student/Results'));
+const LearningPath = lazy(() => import('./pages/student/LearningPath'));
+const Leave = lazy(() => import('./pages/common/Leave'));
+const LeavesAdmin = lazy(() => import('./pages/admin/Leaves'));
+const Timetable = lazy(() => import('./pages/common/Timetable'));
+const TimetableAdmin = lazy(() => import('./pages/admin/Timetable'));
+const AcademicCalendar = lazy(() => import('./pages/common/AcademicCalendar'));
+const Messages = lazy(() => import('./pages/common/Messages'));
+const Performance = lazy(() => import('./pages/common/Performance'));
+const MyPerformance = lazy(() => import('./pages/student/MyPerformance'));
+const ChildPerformance = lazy(() => import('./pages/parent/ChildPerformance'));
+const ChildFees = lazy(() => import('./pages/parent/ChildFees'));
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { me, loading } = useAuth();
   const loc = useLocation();
   if (loading) return <div className="p-10"><LoadingBlock /></div>;
+  if (!me && loc.pathname === '/') return <Landing />;
   if (!me) return <Navigate to="/login" replace state={{ from: loc.pathname }} />;
   return <>{children}</>;
 }
@@ -110,6 +123,18 @@ function Inner() {
       <Route path="admin/fees" element={<RoleGate roles={ADMIN}><Fees /></RoleGate>} />
       <Route path="admin/results" element={<RoleGate roles={ADMIN}><ResultsAdmin /></RoleGate>} />
       <Route path="fees" element={<RoleGate roles={['STUDENT']}><StudentFees /></RoleGate>} />
+      <Route path="learning-path" element={<RoleGate roles={['STUDENT']}><LearningPath /></RoleGate>} />
+      <Route path="leave" element={<RoleGate roles={['STUDENT', 'FACULTY']}><Leave /></RoleGate>} />
+      <Route path="admin/leaves" element={<RoleGate roles={ADMIN}><LeavesAdmin /></RoleGate>} />
+      <Route path="timetable" element={<RoleGate roles={['STUDENT', 'FACULTY']}><Timetable /></RoleGate>} />
+      <Route path="admin/timetable" element={<RoleGate roles={ADMIN}><TimetableAdmin /></RoleGate>} />
+      <Route path="calendar" element={<AcademicCalendar />} />
+      <Route path="messages" element={<RoleGate roles={['COLLEGE_ADMIN', 'FACULTY', 'STUDENT', 'PARENT']}><Messages /></RoleGate>} />
+      <Route path="messages/:id" element={<RoleGate roles={['COLLEGE_ADMIN', 'FACULTY', 'STUDENT', 'PARENT']}><Messages /></RoleGate>} />
+      <Route path="performance" element={<RoleGate roles={['FACULTY', 'COLLEGE_ADMIN']}><Performance /></RoleGate>} />
+      <Route path="my-performance" element={<RoleGate roles={['STUDENT']}><MyPerformance /></RoleGate>} />
+      <Route path="parent/performance" element={<RoleGate roles={['PARENT']}><ChildPerformance /></RoleGate>} />
+      <Route path="parent/fees" element={<RoleGate roles={['PARENT']}><ChildFees /></RoleGate>} />
       <Route path="results" element={<RoleGate roles={['STUDENT']}><StudentResults /></RoleGate>} />
       <Route path="admin/settings" element={<RoleGate roles={['SUPER_ADMIN']}><Settings /></RoleGate>} />
       <Route path="parent/settings" element={<RoleGate roles={['PARENT']}><ParentSettings /></RoleGate>} />

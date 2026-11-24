@@ -8,3 +8,7 @@ export function addDays(ymd: string, days: number) {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
+
+/** A `@db.Date` value for a YYYY-MM-DD string, and back. */
+export const toDay = (ymd: string) => new Date(ymd + 'T00:00:00Z');
+export const ymd = (d: Date) => d.toISOString().slice(0, 10);

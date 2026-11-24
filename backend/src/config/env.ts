@@ -9,6 +9,7 @@ const schema = z.object({
   CORS_ORIGINS: z.string().default('http://localhost:5173'),
   APP_URL: z.string().default('http://localhost:5173'),
   STORAGE_DIR: z.string().default('./storage'),
+  BLOB_READ_WRITE_TOKEN: z.string().optional(), // set on Vercel: uploads go to private Vercel Blob
   ANTHROPIC_API_KEY: z.string().optional(),
   AI_MODEL: z.string().default('claude-opus-5-5'),
 });

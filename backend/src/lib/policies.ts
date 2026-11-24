@@ -51,8 +51,8 @@ export async function assertStudent(user: AuthUser, offeringId: string) {
 
 export type ParentScope = 'PROGRESS' | 'GRADES' | 'ATTENDANCE';
 
-/** Parent read requires an ACTIVE link and a live consent covering the scope. Access is audited. */
-export async function assertParentScope(req: Request, studentId: string, scope: ParentScope) {
+/** The scopes a parent currently holds for a student (live, unexpired consents on an ACTIVE link). */
+export async function parentScopes(req: Request, studentId: string) {
   const link = await prisma.parentStudentLink.findUnique({
     where: { parentId_studentId: { parentId: req.user!.id, studentId } },
     include: { consents: { where: { revokedAt: null } } },
@@ -60,8 +60,14 @@ export async function assertParentScope(req: Request, studentId: string, scope: 
   // 404 rather than 403: don't reveal whether an unlinked student exists.
   if (!link || link.status !== 'ACTIVE') throw notFound('Student not found');
   const now = new Date();
-  const ok = link.consents.some((c) => c.scope.includes(scope) && (!c.expiresAt || c.expiresAt > now));
-  if (!ok) throw forbidden(`Access to ${scope.toLowerCase()} has not been granted`);
+  const scopes = new Set(link.consents.filter((c) => !c.expiresAt || c.expiresAt > now).flatMap((c) => c.scope as ParentScope[]));
+  return { link, scopes };
+}
+
+/** Parent read requires an ACTIVE link and a live consent covering the scope. Access is audited. */
+export async function assertParentScope(req: Request, studentId: string, scope: ParentScope) {
+  const { link, scopes } = await parentScopes(req, studentId);
+  if (!scopes.has(scope)) throw forbidden(`Access to ${scope.toLowerCase()} has not been granted`);
   await audit(req, 'PARENT_VIEW', 'User', studentId, { scope });
   return link;
 }

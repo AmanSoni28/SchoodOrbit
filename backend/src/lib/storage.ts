@@ -1,12 +1,17 @@
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
+import { Readable } from 'stream';
+import type { Response } from 'express';
+import { get as blobGet, put as blobPut } from '@vercel/blob';
 import { env } from '../config/env';
 import { prisma } from './prisma';
-import { badRequest } from './errors';
+import { badRequest, notFound } from './errors';
 
-// shortcut: local-disk driver; swap for an S3-compatible driver (same save/read API) in production.
+// Two drivers behind one API: private Vercel Blob when BLOB_READ_WRITE_TOKEN is set (serverless hosts have no
+// persistent disk), otherwise the local STORAGE_DIR. The storageKey is the same shape for both.
 const root = path.resolve(env.STORAGE_DIR);
+const useBlob = !!env.BLOB_READ_WRITE_TOKEN;
 
 export const ALLOWED_MIME: Record<string, string[]> = {
   'application/pdf': ['.pdf'],
@@ -37,8 +42,11 @@ export async function saveFile(ownerId: string, file: Express.Multer.File, allow
     throw badRequest(`File type not allowed: ${file.originalname}`);
   }
   const storageKey = `${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}${ext}`;
-  await fs.mkdir(path.join(root, path.dirname(storageKey)), { recursive: true });
-  await fs.writeFile(path.join(root, storageKey), file.buffer);
+  if (useBlob) await blobPut(storageKey, file.buffer, { access: 'private', contentType: file.mimetype });
+  else {
+    await fs.mkdir(path.join(root, path.dirname(storageKey)), { recursive: true });
+    await fs.writeFile(path.join(root, storageKey), file.buffer);
+  }
   return prisma.fileAsset.create({
     data: {
       ownerId, storageKey, originalName: file.originalname.slice(0, 200), mimeType: file.mimetype, size: file.size,
@@ -48,4 +56,20 @@ export async function saveFile(ownerId: string, file: Express.Multer.File, allow
 }
 
 export const filePath = (storageKey: string) => path.join(root, storageKey);
-export const readStoredFile = (storageKey: string) => fs.readFile(filePath(storageKey));
+
+async function blobStream(storageKey: string) {
+  const r = await blobGet(storageKey, { access: 'private' });
+  if (!r || r.statusCode !== 200) throw notFound('File not found');
+  return r.stream;
+}
+
+export async function readStoredFile(storageKey: string) {
+  if (!useBlob) return fs.readFile(filePath(storageKey));
+  return Buffer.from(await new globalThis.Response(await blobStream(storageKey)).arrayBuffer());
+}
+
+/** Streams a stored file into the response. Headers (type, disposition) are set by the caller. */
+export async function sendStoredFile(res: Response, storageKey: string) {
+  if (!useBlob) return res.sendFile(filePath(storageKey));
+  Readable.fromWeb(await blobStream(storageKey) as any).pipe(res);
+}

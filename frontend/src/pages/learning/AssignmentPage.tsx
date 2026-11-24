@@ -33,7 +33,7 @@ export default function AssignmentPage() {
             {a.access.isInstructor && <Button variant="secondary" onClick={() => setEditing(true)}>Edit</Button>}
           </div>
           <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-            <Card title="Instructions"><p className="whitespace-pre-wrap text-sm leading-relaxed">{a.instructions}</p></Card>
+            <Card title="Instructions"><p className="whitespace-pre-wrap text-sm leading-relaxed">{a.instructions}</p>{a.files?.length > 0 && <div className="mt-4 border-t border-line/70 pt-3"><p className="text-xs font-semibold uppercase tracking-wider text-muted">Attachments</p><Files files={a.files} /></div>}</Card>
             {a.access.isStudent && <StudentPanel a={a} />}
           </div>
           {(a.access.isInstructor || a.access.isAdmin) && <Submissions a={a} />}

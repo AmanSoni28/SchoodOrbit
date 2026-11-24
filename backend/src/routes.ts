@@ -21,6 +21,12 @@ import parent from './modules/parent/parent.routes';
 import dashboard from './modules/dashboard/dashboard.routes';
 import fees from './modules/fees/fees.routes';
 import results from './modules/results/results.routes';
+import learningPath from './modules/learning-path/learning-path.routes';
+import leave from './modules/leave/leave.routes';
+import timetable from './modules/timetable/timetable.routes';
+import calendar from './modules/calendar/calendar.routes';
+import messages from './modules/messages/messages.routes';
+import performance from './modules/performance/performance.routes';
 
 const routes = Router();
 
@@ -33,7 +39,7 @@ routes.use('/auth', auth); // manages its own authentication for /me, /mfa, …
 // ── Everything below requires a valid session ──
 // Routers declare full paths; any role/feature middleware inside them is scoped to their own paths.
 routes.use(authenticate);
-for (const r of [settings, users, academics, courses, content, files, assignments, quizzes, gradebook, attendance, communication, doubts, revision, aiHomework, aiContent, analytics, parent, dashboard, fees, results]) {
+for (const r of [settings, users, academics, courses, content, files, assignments, quizzes, gradebook, attendance, communication, doubts, revision, aiHomework, aiContent, analytics, parent, dashboard, fees, results, learningPath, leave, timetable, calendar, messages, performance]) {
   routes.use(r);
 }
 

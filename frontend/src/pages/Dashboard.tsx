@@ -10,6 +10,7 @@ import { useAuth, ROLE_LABEL, type Role } from '../lib/auth';
 import { useBranding, featureOn } from '../lib/branding';
 import { fmtDateTime, fromNow, pct } from '../lib/format';
 import { Badge, Card, EmptyState, Hero, HeroChip, LoadingBlock, QueryView, Stat, StatusBadge, Table, Td } from '../components/ui';
+import { Actions, LevelBadge, Trend, type Path } from './student/LearningPath';
 import { AreaChart, BarList, Columns, Donut, Heatmap, Kpi, PALETTE, Ring, Sparkline, StackedBar } from '../components/charts';
 
 const ParentHome = lazy(() => import('./parent/ParentHome'));
@@ -51,6 +52,7 @@ function StudentDashboard() {
   const { me } = useAuth();
   const b = useBranding();
   const q = useQuery({ queryKey: ['dash', 'student'], queryFn: () => get('/dashboard/student') });
+  const path = useQuery<Path>({ queryKey: ['/learning-path'], queryFn: () => get('/learning-path') });
   const rev = useQuery({ queryKey: ['revision', 'today'], queryFn: () => get('/revision/today'), enabled: featureOn(b, 'dailyRevision') });
   return (
     <QueryView q={q}>
@@ -122,6 +124,22 @@ function StudentDashboard() {
                 </Card>
               ) : <Card title="Upcoming classes">{d.sessions.length === 0 ? <p className="text-sm text-muted">No scheduled sessions.</p> : <SessionList sessions={d.sessions} />}</Card>}
             </Grid>
+
+            <Card title="Focus this week" subtitle="Your weakest topics and how to improve them" className="mb-6" action={<ViewAll to="/learning-path">Full learning path</ViewAll>}>
+              {!path.data ? <LoadingBlock rows={2} /> : path.data.focus.length === 0 ? (
+                <p className="text-sm text-muted">No weak topics right now — keep attempting quizzes and daily revision.</p>
+              ) : (
+                <ul className="grid gap-4 md:grid-cols-3">
+                  {path.data.focus.slice(0, 3).map((t) => (
+                    <li key={t.topicId} className="rounded-2xl border border-line/80 p-4">
+                      <div className="flex flex-wrap items-center gap-2"><span className="font-semibold text-navy">{t.name}</span><LevelBadge level={t.level} /><Trend value={t.trend} /></div>
+                      <div className="mt-0.5 text-xs text-muted">{t.course.code}{t.sections.length ? ` · ${t.sections.join(', ')}` : ''} · {pct(t.accuracy)} correct</div>
+                      <Actions items={t.actions.slice(0, 2)} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
 
             <Card title="My learning activity" subtitle="Lessons, quizzes and submissions per day over the last 12 weeks" className="mb-6">
               <Heatmap days={d.heat} label="My learning activity" color="var(--color-accent)" unit="actions" />

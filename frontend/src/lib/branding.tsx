@@ -16,7 +16,7 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.style.setProperty('--brand-primary', b.primaryColor);
     document.documentElement.style.setProperty('--brand-accent', b.accentColor);
-    document.title = b.name;
+    document.title = `ClassOrbit · ${b.name}`;
   }, [b.primaryColor, b.accentColor, b.name]);
   return <Ctx.Provider value={b}>{children}</Ctx.Provider>;
 }

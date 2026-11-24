@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { waitUntil } from '@vercel/functions';
 import type Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { prisma } from '../../lib/prisma';
@@ -54,7 +55,8 @@ let running = false;
 
 export function enqueue(jobId: string) {
   queue.push(jobId);
-  if (!running) void drain();
+  // On serverless hosts the function is frozen after the response; waitUntil keeps it alive until the job ends.
+  if (!running) waitUntil(drain());
 }
 
 async function drain() {
