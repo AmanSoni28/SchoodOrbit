@@ -18,6 +18,11 @@ if [ "${VERCEL_ENV:-}" = "production" ]; then
       for s in db:seed db:demo db:topics db:activity; do npm run -s "$s" -w backend 2>&1 | sed '/password/Id'; done
     )
   fi
+
+  # One-off: reset every demo account's password and clear lockouts (`--build-env RESET_DEMO_PASSWORD=1`).
+  if [ "${RESET_DEMO_PASSWORD:-}" = "1" ]; then
+    DATABASE_URL="$DIRECT" npm exec -w backend -- tsx scripts/set-demo-password.ts
+  fi
 fi
 
 VITE_MAX_UPLOAD_MB=4 npm run build -w frontend
