@@ -3,8 +3,10 @@ import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
 import { authenticate, requireFeature, requireRole } from '../../middleware/auth';
 import { audit } from '../../lib/audit';
-import { notFound } from '../../lib/errors';
-import { assertParentScope } from '../../lib/policies';
+import { forbidden, notFound } from '../../lib/errors';
+import { assertParentScope, parentScopes } from '../../lib/policies';
+import { studentReport } from '../performance/student.service';
+import { studentFees } from '../fees/fees.routes';
 import { lessonCompletion } from '../content/content.routes';
 import { computeGradebook } from '../gradebook/gradebook.service';
 import { attendanceSummary } from '../attendance/attendance.routes';
@@ -84,6 +86,24 @@ r.get('/parent/students/:id/attendance', async (req, res) => {
   const out = [];
   for (const e of enr) out.push({ course: e.offering.course, ...(await attendanceSummary(e.offeringId, [studentId]))[0] });
   res.json({ data: out });
+});
+
+// The child's performance report, limited to the sections the student has consented to share.
+r.get('/parent/students/:id/performance', async (req, res) => {
+  const studentId = uuid.parse(req.params.id);
+  const { scopes } = await parentScopes(req, studentId);
+  const granted = { grades: scopes.has('GRADES'), attendance: scopes.has('ATTENDANCE'), progress: scopes.has('PROGRESS') };
+  if (!granted.grades && !granted.attendance && !granted.progress) throw forbidden('Your child has not shared any performance data with you');
+  await audit(req, 'PARENT_VIEW', 'User', studentId, { scope: [...scopes], view: 'performance' });
+  res.json({ data: await studentReport(studentId, granted) });
+});
+
+// Fees are billing information for the family, so an ACTIVE, admin-verified link is enough — no extra consent scope.
+r.get('/parent/students/:id/fees', async (req, res) => {
+  const studentId = uuid.parse(req.params.id);
+  await parentScopes(req, studentId); // 404 unless actively linked
+  await audit(req, 'PARENT_VIEW', 'User', studentId, { scope: 'FEES' });
+  res.json({ data: await studentFees(studentId) });
 });
 
 r.get('/parent/students/:id/calendar', async (req, res) => {

@@ -4,6 +4,9 @@ import { uploadFile } from '../lib/api';
 import { bytes } from '../lib/format';
 import { Button, useToast } from './ui';
 
+// Matches the server's upload limit: 20 MB normally, 4 MB on Vercel (set at build time in vercel.json).
+export const MAX_MB = Number(import.meta.env.VITE_MAX_UPLOAD_MB) || 20;
+
 export type Uploaded = { id: string; originalName: string; mimeType: string; size: number };
 
 /** Uploads immediately to /files and reports the stored file ids. */
@@ -17,7 +20,7 @@ export function FileUpload({ value, onChange, accept, max = 5, label = 'Attach f
     try {
       const out = [...value];
       for (const f of Array.from(files).slice(0, max - value.length)) {
-        if (f.size > 20 * 1024 * 1024) { toast.error(`${f.name} is larger than 20 MB`); continue; }
+        if (f.size > MAX_MB * 1024 * 1024) { toast.error(`${f.name} is larger than ${MAX_MB} MB`); continue; }
         out.push(await uploadFile(f));
       }
       onChange(out);

@@ -39,13 +39,22 @@ const body = z.object({
   maxPoints: z.number().int().min(1).max(1000), allowLate: z.boolean(), latePenaltyPct: z.number().int().min(0).max(100),
   allowResubmission: z.boolean(), rubric: z.array(z.object({ criterion: z.string().min(1).max(200), points: z.number().min(0) })).max(20).nullable(),
   status: z.enum(['DRAFT', 'PUBLISHED', 'CLOSED', 'ARCHIVED']),
+  fileAssetIds: z.array(uuid).max(5),
 });
+
+/** Attachments must be files this teacher uploaded, or ones already on this assignment (a co-instructor's). */
+async function checkedFiles(ids: string[], userId: string, assignmentId?: string) {
+  const ok = await prisma.fileAsset.count({ where: { id: { in: ids }, OR: [{ ownerId: userId }, ...(assignmentId ? [{ assignmentFiles: { some: { assignmentId } } }] : [])] } });
+  if (ok !== new Set(ids).size) throw badRequest('Upload your files first');
+  return [...new Set(ids)];
+}
 
 r.post('/offerings/:id/assignments', async (req, res) => {
   const offeringId = uuid.parse(req.params.id);
   await assertInstructor(req.user!, offeringId);
-  const data = body.partial({ maxPoints: true, allowLate: true, latePenaltyPct: true, allowResubmission: true, rubric: true, status: true }).parse(req.body);
-  const a = await prisma.assignment.create({ data: { ...data, rubric: data.rubric ?? undefined, offeringId } });
+  const { fileAssetIds = [], ...data } = body.partial({ maxPoints: true, allowLate: true, latePenaltyPct: true, allowResubmission: true, rubric: true, status: true, fileAssetIds: true }).parse(req.body);
+  const files = await checkedFiles(fileAssetIds, req.user!.id);
+  const a = await prisma.assignment.create({ data: { ...data, rubric: data.rubric ?? undefined, offeringId, files: { create: files.map((fileAssetId) => ({ fileAssetId })) } } });
   if (a.status === 'PUBLISHED') await announce(a.offeringId, a.id, a.title);
   res.status(201).json({ data: a });
 });
@@ -56,7 +65,9 @@ async function announce(offeringId: string, id: string, title: string) {
 }
 
 r.get('/assignments/:id', async (req, res) => {
-  const a = await assignmentOf(uuid.parse(req.params.id));
+  const id = uuid.parse(req.params.id);
+  const a = await prisma.assignment.findUnique({ where: { id }, include: { files: fileBrief } });
+  if (!a) throw notFound('Assignment not found');
   const acc = await assertMember(req.user!, a.offeringId);
   if (!acc.isInstructor && !acc.isAdmin && !['PUBLISHED', 'CLOSED'].includes(a.status)) throw notFound('Assignment not found');
   const mine = acc.isStudent
@@ -74,8 +85,12 @@ r.get('/assignments/:id', async (req, res) => {
 r.patch('/assignments/:id', async (req, res) => {
   const a = await assignmentOf(uuid.parse(req.params.id));
   await assertInstructor(req.user!, a.offeringId);
-  const data = body.partial().parse(req.body);
-  const updated = await prisma.assignment.update({ where: { id: a.id }, data: { ...data, rubric: data.rubric === null ? undefined : data.rubric } });
+  const { fileAssetIds, ...data } = body.partial().parse(req.body);
+  const files = fileAssetIds && await checkedFiles(fileAssetIds, req.user!.id, a.id);
+  const updated = await prisma.assignment.update({
+    where: { id: a.id },
+    data: { ...data, rubric: data.rubric === null ? undefined : data.rubric, ...(files && { files: { deleteMany: {}, create: files.map((fileAssetId) => ({ fileAssetId })) } }) },
+  });
   if (a.status === 'DRAFT' && updated.status === 'PUBLISHED') await announce(a.offeringId, a.id, a.title);
   res.json({ data: updated });
 });

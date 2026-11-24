@@ -103,7 +103,7 @@ const STATUS_TONE: Record<string, Parameters<typeof Badge>[0]['tone']> = {
   PUBLISHED: 'success', ACTIVE: 'success', GRADED: 'success', ANSWERED: 'success', RESOLVED: 'neutral', COMPLETED: 'success', APPROVED: 'success', DRAFT_READY: 'primary', READY: 'primary',
   DRAFT: 'neutral', SCHEDULED: 'primary', CLOSED: 'neutral', ARCHIVED: 'neutral', SUBMITTED: 'primary', IN_PROGRESS: 'warning', OPEN: 'warning', PENDING: 'warning',
   PAID: 'success', PARTIAL: 'primary', OVERDUE: 'danger', WAIVED: 'neutral', PASS: 'success', FAIL: 'danger', INCOMPLETE: 'warning',
-  QUEUED: 'neutral', PROCESSING: 'primary', FAILED: 'danger', REJECTED: 'danger', HIDDEN: 'danger', SUSPENDED: 'danger', DROPPED: 'danger', REVOKED: 'danger', NO_CONTENT: 'neutral',
+  QUEUED: 'neutral', PROCESSING: 'primary', FAILED: 'danger', REJECTED: 'danger', CANCELLED: 'neutral', HIDDEN: 'danger', SUSPENDED: 'danger', DROPPED: 'danger', REVOKED: 'danger', NO_CONTENT: 'neutral',
 };
 export const StatusBadge = ({ status }: { status: string }) => <Badge tone={STATUS_TONE[status] ?? 'neutral'}>{status.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase())}</Badge>;
 

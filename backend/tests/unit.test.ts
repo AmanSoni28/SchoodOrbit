@@ -7,6 +7,12 @@ import { addDays, localDate } from '../src/lib/time';
 import { validateDraft } from '../src/modules/ai-content/ai-content.service';
 import { cgpa, gradeFor, summarise } from '../src/modules/results/results.service';
 import { feeState } from '../src/modules/fees/fees.service';
+import { levelFor, mastery, topicFeedback, type Answer } from '../src/modules/learning-path/learning-path.service';
+import { checkRange, leaveDays } from '../src/modules/leave/leave.service';
+import { findClash, overlaps } from '../src/modules/timetable/timetable.service';
+import { canUseMessages, contactWhere, pair } from '../src/modules/messages/messages.service';
+import { classStats, riskFlags } from '../src/modules/performance/performance.service';
+import { insights } from '../src/modules/performance/student.service';
 
 describe('grading', () => {
   const opts = [{ id: 'a', text: 'A' }, { id: 'b', text: 'B' }, { id: 'c', text: 'C' }];
@@ -94,5 +100,116 @@ describe('fees', () => {
     expect(f(1000, 0, '2026-06-01', [600, 400])).toMatchObject({ status: 'PAID', balance: 0 });
     expect(f(1000, 1000, '2026-06-01', [])).toMatchObject({ status: 'WAIVED', balance: 0 });
     expect(f(0.3, 0, '2026-07-01', [0.1, 0.2])).toMatchObject({ status: 'PAID' }); // float-safe
+  });
+});
+
+describe('learning path mastery', () => {
+  const now = new Date('2026-11-24T12:00:00Z');
+  const ans = (correct: boolean, daysAgo: number): Answer => ({ topicId: 't', offeringId: 'o', correct, at: new Date(now.getTime() - daysAgo * 86400000), source: 'QUIZ' });
+  it('classifies by accuracy and needs enough answers', () => {
+    expect(levelFor(90, 2)).toBe('NOT_ENOUGH_DATA');
+    expect(levelFor(50, 5)).toBe('NEEDS_WORK');
+    expect(levelFor(60, 5)).toBe('DEVELOPING');
+    expect(levelFor(75, 5)).toBe('STRONG');
+  });
+  it('detects improvement: wrong earlier, right recently', () => {
+    const m = mastery([ans(false, 30), ans(false, 20), ans(true, 3), ans(true, 1)], now);
+    expect(m).toMatchObject({ total: 4, correct: 2, accuracy: 50, level: 'NEEDS_WORK', trend: 100 });
+    expect(topicFeedback(m, [], 'o').summary).toMatch(/Improving — up 100 points/);
+  });
+  it('suggests unfinished lessons first, and no actions when strong', () => {
+    const weak = mastery([ans(false, 1), ans(false, 1), ans(true, 1)], now);
+    const f = topicFeedback(weak, [{ id: 'L1', title: 'Joins', section: 'Unit 2', done: false }, { id: 'L2', title: 'Keys', section: 'Unit 1', done: true }], 'o');
+    expect(f.actions[0]).toEqual({ text: 'Complete the lesson "Joins" (Unit 2)', to: '/lessons/L1' });
+    expect(f.actions.some((a) => a.to === '/lessons/L2')).toBe(true);
+    expect(topicFeedback(mastery([ans(true, 1), ans(true, 1), ans(true, 1)], now), [], 'o').actions).toEqual([]);
+  });
+});
+
+describe('leave', () => {
+  it('counts inclusive calendar days across months', () => {
+    expect(leaveDays('2026-11-24', '2026-11-24')).toBe(1);
+    expect(leaveDays('2026-11-29', '2026-12-02')).toBe(4);
+  });
+  it('validates ranges against today', () => {
+    const today = '2026-11-24';
+    expect(checkRange('2026-11-25', '2026-11-27', today)).toBeNull();
+    expect(checkRange('2026-11-20', '2026-11-21', today)).toBeNull(); // backdated sick leave is allowed
+    expect(checkRange('2026-11-27', '2026-11-25', today)).toMatch(/before/);
+    expect(checkRange('2026-12-01', '2027-01-15', today)).toMatch(/at most 30/);
+    expect(checkRange('2026-10-01', '2026-10-02', today)).toMatch(/after it started/);
+    expect(checkRange('2027-08-01', '2027-08-02', today)).toMatch(/in advance/);
+  });
+});
+
+describe('timetable clashes', () => {
+  const base = { sectionId: 's1', semesterId: 'sem', facultyIds: ['f1'], room: 'CR-201', label: 'CS301', dayOfWeek: 1, startTime: '09:00', endTime: '10:00' };
+  it('treats touching slots as free and overlapping ones as clashing', () => {
+    expect(overlaps(base, { ...base, startTime: '10:00', endTime: '11:00' })).toBe(false);
+    expect(overlaps(base, { ...base, startTime: '09:30', endTime: '10:30' })).toBe(true);
+    expect(overlaps(base, { ...base, dayOfWeek: 2 })).toBe(false);
+  });
+  it('reports section, instructor and room clashes', () => {
+    const other = { ...base, id: 'x', facultyIds: ['f2'], room: 'CR-305', label: 'CS303' };
+    expect(findClash(base, [other])).toMatch(/section already has CS303/);
+    expect(findClash(base, [{ ...other, sectionId: 's2', facultyIds: ['f1'] }])).toMatch(/instructor/);
+    expect(findClash(base, [{ ...other, sectionId: 's2', room: 'cr-201 ' }])).toMatch(/Room/);
+    expect(findClash(base, [{ ...other, sectionId: 's2' }])).toBeNull();
+    expect(findClash({ ...base, id: 'x' }, [other])).toBeNull(); // editing a slot never clashes with itself
+  });
+});
+
+describe('messaging rules', () => {
+  it('stores each pair once regardless of who starts', () => {
+    expect(pair('b', 'a')).toEqual(pair('a', 'b'));
+    expect(pair('a', 'b')).toEqual({ userAId: 'a', userBId: 'b' });
+  });
+  it('limits messaging to the four campus roles', () => {
+    expect(canUseMessages(['SUPER_ADMIN'])).toBe(false);
+    expect(canUseMessages(['PARENT'])).toBe(true);
+  });
+  it('never lets a student reach students at large, and drops parent rules when the portal is off', () => {
+    const s = JSON.stringify(contactWhere({ id: 'me', roles: ['STUDENT'] }, true));
+    expect(s).not.toContain('"in":["COLLEGE_ADMIN","FACULTY","STUDENT","PARENT"]');
+    expect(s).toContain('"studentId":"me"');
+    expect(JSON.stringify(contactWhere({ id: 'me', roles: ['STUDENT'] }, false))).not.toContain('PARENT');
+    expect(contactWhere({ id: 'me', roles: ['PARENT'] }, false).OR).toHaveLength(1); // admin only
+  });
+});
+
+describe('performance analysis', () => {
+  it('computes class statistics, ignoring students without marks', () => {
+    const s = classStats([
+      { totalPct: 92, attendancePct: 90, atRisk: false }, { totalPct: 35, attendancePct: 60, atRisk: true },
+      { totalPct: 71, attendancePct: 80, atRisk: false }, { totalPct: null, attendancePct: null, atRisk: false },
+    ]);
+    expect(s).toMatchObject({ students: 4, graded: 3, average: 66, median: 71, highest: 92, lowest: 35, passRate: 66.7, attendance: 76.7, belowAttendance: 1, atRisk: 1 });
+    expect(s.distribution.find((d) => d.grade === 'O')!.n).toBe(1);
+    expect(s.distribution.find((d) => d.grade === 'F')!.n).toBe(1);
+    expect(s.distribution.at(-1)).toEqual({ grade: 'No marks', n: 1 });
+    expect(classStats([]).average).toBeNull();
+  });
+  it('flags failing marks and low attendance with a reason each', () => {
+    const f = riskFlags({ totalPct: 32, attendancePct: 70, insightReasons: [], insightAtRisk: false });
+    expect(f.atRisk).toBe(true);
+    expect(f.risks).toHaveLength(2);
+    expect(riskFlags({ totalPct: 80, attendancePct: 90, insightReasons: [], insightAtRisk: false })).toEqual({ risks: [], atRisk: false });
+  });
+});
+
+describe('student performance insights', () => {
+  const course = (code: string, extra: object) => ({ offeringId: code, status: 'PUBLISHED', course: { code, title: code, credits: 4 }, semester: { id: 's', name: 'S', startDate: new Date() }, instructors: [], risks: [], atRisk: false, ...extra });
+  it('puts problems first, groups overdue work and only uses visible sections', () => {
+    const out = insights([
+      course('A', { marks: { totalPct: 82, classAverage: 70, items: [] }, attendance: { percent: 70, attended: 7, marked: 10 }, progress: { missing: 1 } }),
+      course('B', { marks: { totalPct: 45, classAverage: 60, items: [] }, attendance: { percent: 95, attended: 19, marked: 20 }, progress: { missing: 2 } }),
+    ] as any);
+    expect(out[0].tone).toBe('bad');
+    expect(out.filter((i) => i.text.includes('overdue'))).toEqual([{ tone: 'bad', text: '3 overdue assignments not submitted (A, B).' }]);
+    expect(out.some((i) => i.text.startsWith('Strongest course: A'))).toBe(true);
+    expect(out.some((i) => i.text.startsWith('B is at 45%'))).toBe(true);
+    // Attendance-only view (parent without grade consent): nothing about marks.
+    const att = insights([course('A', { attendance: { percent: 60, attended: 6, marked: 10 } })] as any);
+    expect(att.map((i) => i.text).join(' ')).not.toMatch(/Strongest|average|%\s—\sworth/);
   });
 });

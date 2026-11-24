@@ -4,11 +4,12 @@ import { z } from 'zod';
 import { prisma } from '../../lib/prisma';
 import { authenticate, type AuthUser } from '../../middleware/auth';
 import { badRequest, notFound } from '../../lib/errors';
-import { filePath, saveFile } from '../../lib/storage';
+import { saveFile, sendStoredFile } from '../../lib/storage';
 import { offeringAccess } from '../../lib/policies';
 import { visibleLesson } from '../content/content.routes';
 
-export const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 5 } });
+// Vercel functions accept request bodies up to 4.5 MB, so uploads are capped at 4 MB there.
+export const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: (process.env.VERCEL ? 4 : 20) * 1024 * 1024, files: 5 } });
 
 const r = Router();
 
@@ -25,6 +26,7 @@ export async function canAccessFile(user: AuthUser, fileId: string) {
     include: {
       lessonResources: { include: { lesson: { select: { id: true, offeringId: true } } } },
       submissionFiles: { include: { submission: { include: { assignment: { select: { offeringId: true } } } } } },
+      assignmentFiles: { include: { assignment: { select: { offeringId: true, status: true } } } },
       aiSources: { include: { job: { select: { offeringId: true } } } },
     },
   });
@@ -38,6 +40,12 @@ export async function canAccessFile(user: AuthUser, fileId: string) {
   for (const sf of f.submissionFiles) {
     const a = await offeringAccess(user, sf.submission.assignment.offeringId);
     if (a.isInstructor || a.isAdmin) return f;
+  }
+  // Assignment attachments: staff always; enrolled students once the assignment is visible to them.
+  for (const af of f.assignmentFiles) {
+    const a = await offeringAccess(user, af.assignment.offeringId);
+    if (a.isInstructor || a.isAdmin) return f;
+    if (a.isStudent && ['PUBLISHED', 'CLOSED'].includes(af.assignment.status)) return f;
   }
   for (const s of f.aiSources) {
     if ((await offeringAccess(user, s.job.offeringId)).isInstructor) return f;
@@ -53,7 +61,7 @@ r.get('/files/:id/download', async (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   const inline = f.mimeType === 'application/pdf' || f.mimeType.startsWith('image/');
   res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${encodeURIComponent(f.originalName)}"`);
-  res.sendFile(filePath(f.storageKey));
+  await sendStoredFile(res, f.storageKey);
 });
 
 export default r;

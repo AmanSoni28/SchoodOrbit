@@ -3,17 +3,19 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { useQuery } from '@tanstack/react-query';
 import {
   Bell, BookOpen, Brain, Building2, CalendarCheck, ChevronDown, ClipboardList, FileClock, GraduationCap, HeartHandshake, LayoutDashboard,
-  LogOut, Megaphone, Menu, Settings, ShieldCheck, Sparkles, Users, X, BarChart3, Award, Lock, Server, UserCog, ChevronsLeft, ChevronsRight, Trophy, Wallet,
+  LogOut, Megaphone, Menu, Settings, ShieldCheck, Sparkles, Users, X, BarChart3, Award, Lock, Server, UserCog, ChevronsLeft, ChevronsRight, Trophy, Wallet, Target, CalendarOff, CalendarClock, CalendarDays, MessageSquare, TrendingUp,
 } from 'lucide-react';
 import { useAuth, ROLE_LABEL, fullName, type Role } from '../lib/auth';
 import { useBranding, featureOn } from '../lib/branding';
-import { api } from '../lib/api';
+import { api, get } from '../lib/api';
 import { cx } from './ui';
+import { HelpBot } from './HelpBot';
 
-type Item = { to: string; label: string; icon: ReactNode; feature?: string; badge?: 'unread' };
+type Item = { to: string; label: string; icon: ReactNode; feature?: string; badge?: 'unread' | 'messages' };
 type Group = { section: string; items: Item[] };
 const i = (C: any) => <C className="size-[18px] shrink-0" aria-hidden />;
 
+const MESSAGES: Item = { to: '/messages', label: 'Messages', icon: i(MessageSquare), badge: 'messages' };
 const COMMON: Group = { section: 'Account', items: [
   { to: '/notifications', label: 'Notifications', icon: i(Bell), badge: 'unread' },
   { to: '/account', label: 'Account & security', icon: i(UserCog) },
@@ -33,19 +35,23 @@ const NAV: Record<Role, Group[]> = {
     { section: 'Insights', items: [
       { to: '/', label: 'Overview', icon: i(LayoutDashboard) },
       { to: '/admin/reports', label: 'Reports & analytics', icon: i(BarChart3) },
+      { to: '/performance', label: 'Performance analysis', icon: i(TrendingUp) },
     ] },
     { section: 'Academics', items: [
       { to: '/admin/academics', label: 'Academic structure', icon: i(Building2) },
       { to: '/admin/courses', label: 'Course catalogue', icon: i(BookOpen) },
       { to: '/admin/offerings', label: 'Course offerings', icon: i(ClipboardList) },
+      { to: '/admin/timetable', label: 'Timetable', icon: i(CalendarClock) },
+      { to: '/calendar', label: 'Academic calendar', icon: i(CalendarDays) },
       { to: '/admin/results', label: 'Results', icon: i(Trophy) },
     ] },
     { section: 'Finance', items: [{ to: '/admin/fees', label: 'Fees & payments', icon: i(Wallet) }] },
     { section: 'People', items: [
       { to: '/admin/users', label: 'Users', icon: i(Users) },
+      { to: '/admin/leaves', label: 'Leave requests', icon: i(CalendarOff) },
       { to: '/admin/parent-links', label: 'Parent access', icon: i(HeartHandshake), feature: 'parentPortal' },
     ] },
-    { section: 'Communication', items: [{ to: '/announcements', label: 'Announcements', icon: i(Megaphone) }] },
+    { section: 'Communication', items: [MESSAGES, { to: '/announcements', label: 'Announcements', icon: i(Megaphone) }] },
     { section: 'Governance', items: [{ to: '/admin/audit', label: 'Audit log', icon: i(FileClock) }] },
     COMMON,
   ],
@@ -53,28 +59,43 @@ const NAV: Record<Role, Group[]> = {
     { section: 'Teaching', items: [
       { to: '/', label: 'Dashboard', icon: i(LayoutDashboard) },
       { to: '/courses', label: 'My courses', icon: i(BookOpen) },
+      { to: '/performance', label: 'Performance analysis', icon: i(TrendingUp) },
+      { to: '/timetable', label: 'Timetable', icon: i(CalendarClock) },
+      { to: '/calendar', label: 'Academic calendar', icon: i(CalendarDays) },
     ] },
-    { section: 'Communication', items: [{ to: '/announcements', label: 'Announcements', icon: i(Megaphone) }] },
+    { section: 'Requests', items: [{ to: '/leave', label: 'Apply for leave', icon: i(CalendarOff) }] },
+    { section: 'Communication', items: [MESSAGES, { to: '/announcements', label: 'Announcements', icon: i(Megaphone) }] },
     COMMON,
   ],
   STUDENT: [
     { section: 'Learning', items: [
       { to: '/', label: 'Dashboard', icon: i(LayoutDashboard) },
       { to: '/courses', label: 'My courses', icon: i(BookOpen) },
+      { to: '/timetable', label: 'Timetable', icon: i(CalendarClock) },
+      { to: '/calendar', label: 'Academic calendar', icon: i(CalendarDays) },
+      { to: '/learning-path', label: 'My learning path', icon: i(Target) },
       { to: '/revision', label: 'Daily revision', icon: i(CalendarCheck), feature: 'dailyRevision' },
       { to: '/ai-helper', label: 'AI Homework Helper', icon: i(Sparkles), feature: 'aiHomework' },
     ] },
     { section: 'Achievements', items: [
+      { to: '/my-performance', label: 'My performance', icon: i(TrendingUp) },
       { to: '/results', label: 'Results', icon: i(Trophy) },
       { to: '/certificates', label: 'Certificates', icon: i(Award) },
     ] },
     { section: 'Finance', items: [{ to: '/fees', label: 'My fees', icon: i(Wallet) }] },
-    { section: 'Communication', items: [{ to: '/announcements', label: 'Announcements', icon: i(Megaphone) }] },
+    { section: 'Requests', items: [{ to: '/leave', label: 'Apply for leave', icon: i(CalendarOff) }] },
+    { section: 'Communication', items: [MESSAGES, { to: '/announcements', label: 'Announcements', icon: i(Megaphone) }] },
     { section: 'Privacy', items: [{ to: '/privacy', label: 'Parent access', icon: i(Lock), feature: 'parentPortal' }] },
     COMMON,
   ],
   PARENT: [
-    { section: 'My child', items: [{ to: '/', label: 'Progress overview', icon: i(GraduationCap) }] },
+    { section: 'My child', items: [
+      { to: '/', label: 'Progress overview', icon: i(GraduationCap) },
+      { to: '/parent/performance', label: 'Performance', icon: i(TrendingUp) },
+      { to: '/parent/fees', label: 'Fees', icon: i(Wallet) },
+      { to: '/calendar', label: 'Academic calendar', icon: i(CalendarDays) },
+    ] },
+    { section: 'Communication', items: [MESSAGES] },
     { section: 'Preferences', items: [{ to: '/parent/settings', label: 'Notification settings', icon: i(Settings) }] },
     COMMON,
   ],
@@ -90,6 +111,8 @@ export function AppShell() {
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
   const unread = useQuery({ queryKey: ['notifications', 'unread'], queryFn: async () => (await api('/notifications?pageSize=1')).meta.unread as number, refetchInterval: 60_000 });
+  const messaging = !!role && role !== 'SUPER_ADMIN';
+  const msgUnread = useQuery({ queryKey: ['/messages/unread'], queryFn: () => get<number>('/messages/unread'), enabled: messaging, refetchInterval: 30_000 });
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const toggleCollapsed = () => setCollapsed((c) => { try { localStorage.setItem('sidebar-collapsed', c ? '0' : '1'); } catch { /* storage blocked */ } return !c; });
   const groups = (role ? NAV[role] : []).map((g) => ({ ...g, items: g.items.filter((x) => !x.feature || featureOn(b, x.feature)) })).filter((g) => g.items.length);
@@ -115,7 +138,7 @@ export function AppShell() {
             {mini ? <div className="mx-auto mb-1.5 h-px w-6 bg-white/10" /> : <div className="mb-1.5 px-3 text-[10.5px] font-semibold uppercase tracking-[.12em] text-white/35">{g.section}</div>}
             <ul className="space-y-0.5">
               {g.items.map((it) => {
-                const count = it.badge === 'unread' ? unread.data ?? 0 : 0;
+                const count = it.badge === 'unread' ? unread.data ?? 0 : it.badge === 'messages' ? msgUnread.data ?? 0 : 0;
                 return (
                   <li key={it.to}>
                     <NavLink to={it.to} end={it.to === '/'} onClick={() => setOpen(false)} title={mini ? it.label : undefined}
@@ -203,6 +226,7 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+      <HelpBot role={role} name={me?.firstName} />
     </div>
   );
 }

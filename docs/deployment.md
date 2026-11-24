@@ -17,8 +17,26 @@ One deployment per college: its own database, storage, domain, `.env` and brandi
 5. Set `CORS_ORIGINS` and `APP_URL` to the public origin.
 6. Create the first Super Admin through a one-off script or the seed adapted with real details, then turn on "Require MFA for administrators".
 
+## Vercel (one project: frontend + API)
+The React build is served as static files and the whole Express API runs as one serverless function (`api/index.ts`); `vercel.json` rewrites `/api/*` to it, so everything stays on one origin and cookies keep working.
+
+1. **Database** — Vercel dashboard → Storage → create a **Neon** Postgres database and connect it to the project. Use the *pooled* URL for `DATABASE_URL` and append `?pgbouncer=true&connection_limit=1` (serverless functions each open their own connection).
+2. **File storage** — Storage → create a **Blob** store (private) and connect it. This sets `BLOB_READ_WRITE_TOKEN`; uploads then go to Blob instead of the (read-only) disk. Vercel limits request bodies to 4.5 MB, so uploads are capped at 4 MB there.
+3. **Environment variables** (Production): `JWT_ACCESS_SECRET` (`node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`), `APP_URL` and `CORS_ORIGINS` = `https://<your-project>.vercel.app`, optionally `ANTHROPIC_API_KEY` and `AI_MODEL`. `NODE_ENV` is set to `production` by Vercel.
+4. **Migrate and seed from your machine**, pointing at Neon's *direct* (non-pooled) URL — PowerShell:
+   ```powershell
+   cd backend
+   $env:DATABASE_URL = "<neon direct url>"
+   npx prisma migrate deploy
+   npm run db:seed; npm run db:demo; npm run db:topics; npm run db:activity   # demo data only — skip for a real college
+   Remove-Item Env:DATABASE_URL
+   ```
+5. **Deploy** — either `npx vercel --prod` from the repo root (uploads the working folder; `.vercelignore` keeps `.env` out), or push to GitHub and import the repo in Vercel (root directory = repo root; settings come from `vercel.json`).
+
+Limits on Vercel: email is not sent until a mail transport is added (`lib/mailer.ts`); AI content jobs run inside the request's function via `waitUntil` (max 300 s); a job interrupted by a crash stays "Processing" — retry it.
+
 ## Required environment
-`DATABASE_URL`, `JWT_ACCESS_SECRET` (≥32 random bytes; it also derives the MFA field-encryption key, so rotating it resets MFA enrolment), `CORS_ORIGINS`, `APP_URL`, `STORAGE_DIR` (until the S3 driver exists), `ANTHROPIC_API_KEY` (optional), `AI_MODEL`.
+`DATABASE_URL`, `JWT_ACCESS_SECRET` (≥32 random bytes; it also derives the MFA field-encryption key, so rotating it resets MFA enrolment), `CORS_ORIGINS`, `APP_URL`, `STORAGE_DIR` (local disk) or `BLOB_READ_WRITE_TOKEN` (Vercel Blob), `ANTHROPIC_API_KEY` (optional), `AI_MODEL`.
 
 ## Security checklist before go-live
 - Use a dedicated least-privilege database role, not `postgres`.
